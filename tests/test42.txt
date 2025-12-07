@@ -1,0 +1,8 @@
+// Test 42: Transaction waits for non-replicated variable
+// x3 is only at site 4. Site 4 is down when T1 tries to read.
+// T1 should wait, then read after recovery.
+begin(T1)
+fail(4)
+R(T1,x3)
+recover(4)
+end(T1)

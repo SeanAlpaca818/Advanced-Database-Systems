@@ -1,0 +1,12 @@
+// Test 29: Three transactions write same variable - only first committer wins
+// T1, T2, T3 all write x2. T2 commits first, T1 and T3 abort.
+begin(T1)
+begin(T2)
+begin(T3)
+W(T1,x2,100)
+W(T2,x2,200)
+W(T3,x2,300)
+end(T2)
+end(T1)
+end(T3)
+dump()

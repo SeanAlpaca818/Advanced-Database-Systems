@@ -1,0 +1,15 @@
+// Test 40: Four transactions write same variable
+// T1, T2, T3, T4 all write x4. T3 commits first. Others abort.
+begin(T1)
+begin(T2)
+begin(T3)
+begin(T4)
+W(T1,x4,100)
+W(T2,x4,200)
+W(T3,x4,300)
+W(T4,x4,400)
+end(T3)
+end(T1)
+end(T2)
+end(T4)
+dump()

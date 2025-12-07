@@ -1,0 +1,13 @@
+// Test 36: Two RW conflicts but no cycle - both commit
+// T1 reads x2, T2 writes x2 (RW edge T1->T2)
+// T2 reads x4, T1 writes x4 (RW edge T2->T1)
+// This creates a cycle but T1 commits first, so T2 should abort
+begin(T1)
+begin(T2)
+R(T1,x2)
+R(T2,x4)
+W(T2,x2,200)
+W(T1,x4,400)
+end(T1)
+end(T2)
+dump()

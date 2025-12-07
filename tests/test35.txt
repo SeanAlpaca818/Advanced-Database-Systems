@@ -1,0 +1,7 @@
+// Test 35: Transaction writes to multiple variables, one site fails
+// T1 writes x2 (all sites) and x1 (site 2 only). Site 2 fails -> T1 aborts
+begin(T1)
+W(T1,x2,200)
+W(T1,x1,100)
+fail(2)
+end(T1)

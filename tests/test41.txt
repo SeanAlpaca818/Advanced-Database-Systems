@@ -1,0 +1,9 @@
+// Test 41: Site failure and recovery mid-transaction
+// T1 writes x2, site 1 fails, site 1 recovers, T1 commits
+// T1's write went to sites 2-10 before failure. Site 1 was not written to.
+// T1 should still commit because it didn't write to site 1 before failure.
+begin(T1)
+fail(1)
+W(T1,x2,222)
+recover(1)
+end(T1)

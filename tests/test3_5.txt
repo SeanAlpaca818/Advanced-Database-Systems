@@ -1,0 +1,13 @@
+// Test 3.5
+// T1 should not abort because site 4 did not fail.
+// T2 will abort because site 2 failed after T2 wrote x8.
+begin(T1)
+begin(T2)
+R(T1,x3)
+W(T2,x8,88)
+fail(2)
+R(T2,x3)
+W(T1,x4,91)
+recover(2)
+end(T2)
+end(T1)

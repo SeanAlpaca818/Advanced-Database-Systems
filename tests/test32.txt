@@ -1,0 +1,15 @@
+// Test 32: Multiple sites fail then recover, replicated var not readable until write
+// Sites 1,2,3 fail and recover. T2 begins after recovery.
+// T2 cannot read x2 from sites 1,2,3 until a write commits there.
+// But sites 4-10 are still up, so T2 can read from them.
+begin(T1)
+fail(1)
+fail(2)
+fail(3)
+recover(1)
+recover(2)
+recover(3)
+begin(T2)
+R(T2,x2)
+end(T1)
+end(T2)

@@ -1,0 +1,10 @@
+// Test 26: Simple read-only transactions always commit
+// T1 and T2 both only read, should both commit
+begin(T1)
+begin(T2)
+R(T1,x1)
+R(T1,x2)
+R(T2,x3)
+R(T2,x4)
+end(T1)
+end(T2)

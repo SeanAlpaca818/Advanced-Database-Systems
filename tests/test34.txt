@@ -1,0 +1,12 @@
+// Test 34: Write makes replicated variable readable after recovery
+// Site 1 fails and recovers. T1 writes x2 to site 1.
+// T2 begins after T1 commits and can read x2 from site 1.
+fail(1)
+recover(1)
+begin(T1)
+W(T1,x2,222)
+end(T1)
+begin(T2)
+R(T2,x2)
+end(T2)
+dump()

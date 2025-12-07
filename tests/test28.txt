@@ -1,0 +1,7 @@
+// Test 28: Write to non-replicated variable, different site fails
+// T1 writes x1 (only at site 2), site 3 fails -> T1 commits (site 2 still up)
+begin(T1)
+W(T1,x1,100)
+fail(3)
+end(T1)
+dump()

@@ -1,0 +1,7 @@
+// Test 30: Read your own write
+// T1 writes then reads same variable, should see its own write
+begin(T1)
+W(T1,x2,999)
+R(T1,x2)
+end(T1)
+dump()

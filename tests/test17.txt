@@ -1,0 +1,14 @@
+// Test 17
+// T3 reads initial value of x3 (30), T2 commits, T3 aborts (site 4 failed)
+// T1 reads initial value of x2 because T3 aborted
+begin(T3)
+begin(T2)
+W(T3,x2,22)
+W(T2,x3,44)
+R(T3,x3)
+end(T2)
+fail(4)
+end(T3)
+begin(T1)
+R(T1,x2)
+end(T1)

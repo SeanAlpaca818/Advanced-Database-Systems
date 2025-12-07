@@ -1,0 +1,8 @@
+// Test 38: Site fails after read (not write) - transaction still commits
+// T1 reads from site 2, then site 2 fails.
+// Available copies abort rule only applies to writes, not reads.
+// T1 should commit.
+begin(T1)
+R(T1,x1)
+fail(2)
+end(T1)

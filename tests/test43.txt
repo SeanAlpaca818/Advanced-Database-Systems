@@ -1,0 +1,13 @@
+// Test 43: Long chain of transactions with snapshot isolation
+// T1 writes x2=100, T2 writes x2=200 (after T1 commits), T3 reads x2 before T2 commits
+// T3 should see T1's value (100)
+begin(T1)
+W(T1,x2,100)
+end(T1)
+begin(T2)
+begin(T3)
+W(T2,x2,200)
+R(T3,x2)
+end(T2)
+end(T3)
+dump()

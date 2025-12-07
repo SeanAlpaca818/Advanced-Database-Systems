@@ -1,0 +1,9 @@
+// Test 31: Snapshot isolation - T2 doesn't see T1's uncommitted write
+// T1 writes x2, T2 reads x2 before T1 commits, T2 sees initial value
+begin(T1)
+begin(T2)
+W(T1,x2,999)
+R(T2,x2)
+end(T1)
+end(T2)
+dump()

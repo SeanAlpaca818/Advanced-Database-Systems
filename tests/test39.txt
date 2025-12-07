@@ -1,0 +1,12 @@
+// Test 39: Multiple transactions, complex ordering
+// T1 writes x2, T2 reads x2 (sees initial), T3 reads x2 after T1 commits (sees T1's write)
+begin(T1)
+begin(T2)
+W(T1,x2,222)
+R(T2,x2)
+end(T1)
+begin(T3)
+R(T3,x2)
+end(T2)
+end(T3)
+dump()

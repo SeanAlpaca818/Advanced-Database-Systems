@@ -1,0 +1,9 @@
+// Test 37: Disjoint writes - no conflict
+// T1 writes x1, T2 writes x3. No conflict, both commit.
+begin(T1)
+begin(T2)
+W(T1,x1,100)
+W(T2,x3,300)
+end(T1)
+end(T2)
+dump()
