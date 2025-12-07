@@ -2,6 +2,16 @@
 
 This is a distributed database system implementing SSI (Serializable Snapshot Isolation) and the Available Copies algorithm.
 
+## Quick Start
+
+```bash
+# Run a single test
+python3 main.py tests/test1.txt
+
+# Run all tests
+python3 run_tests.py
+```
+
 ## Project Structure
 
 ```
@@ -20,38 +30,23 @@ Final_Proj/
     └── ...
 ```
 
-## Core Module Description
+## Core Modules (Execution Order)
 
-### 1. `src/models.py` - Data Models
+### 1. `src/parser.py` - Command Parser
 
-Defines the core data structures of the system:
+Parses commands from input files:
 
-| Class Name | Description |
-|------------|-------------|
-| `TransactionStatus` | Transaction status enum (ACTIVE, COMMITTED, ABORTED, WAITING) |
-| `VariableVersion` | Variable version, contains value, commit time, transaction ID |
-| `Variable` | Variable, maintains multi-version history |
-| `Transaction` | Transaction, contains read set, write set, accessed sites, etc. |
-| `WaitingOperation` | Pending read operation |
+| Command Format | Description |
+|----------------|-------------|
+| `begin(Ti)` | Begin transaction Ti |
+| `R(Ti, xj)` | Transaction Ti reads variable xj |
+| `W(Ti, xj, v)` | Transaction Ti writes value v to variable xj |
+| `end(Ti)` | End transaction Ti |
+| `fail(k)` | Site k fails |
+| `recover(k)` | Site k recovers |
+| `dump()` | Print all site states |
 
-### 2. `src/site_manager.py` - Site Manager
-
-Responsible for data management at a single site:
-
-- **Variable Distribution Rules**:
-  - Odd-indexed variables (x1, x3, ...) → Only at site `1 + (index mod 10)`
-  - Even-indexed variables (x2, x4, ...) → Replicated to all 10 sites
-  - Every `xi` starts at value `10 * i`
-
-- **Main Functions**:
-  - `get_sites_for_variable()` / `get_up_sites_for_variable()` - Resolve placement and currently up replicas
-  - `fail()` / `recover()` - Track failures and reset readability state after recovery
-  - `can_read_variable()` - Enforce snapshot rules per site (including continuous uptime checks)
-  - `was_up_continuously()` - Helper used by `can_read_variable`
-  - `write_variable()` - Append a committed version and, for replicated vars, mark them readable
-  - `dump_all()` - Emit per-site committed values
-
-### 3. `src/transaction_manager.py` - Transaction Manager
+### 2. `src/transaction_manager.py` - Transaction Manager
 
 Implements the core SSI logic:
 
@@ -73,21 +68,36 @@ Implements the core SSI logic:
   - Check WW edges: T1 and committed transaction wrote the same variable
   - Detect cycles through `_can_reach_from_tid()`
 
-### 4. `src/parser.py` - Command Parser
+### 3. `src/site_manager.py` - Site Manager
 
-Parses commands from input files:
+Responsible for data management at a single site:
 
-| Command Format | Description |
-|----------------|-------------|
-| `begin(Ti)` | Begin transaction Ti |
-| `R(Ti, xj)` | Transaction Ti reads variable xj |
-| `W(Ti, xj, v)` | Transaction Ti writes value v to variable xj |
-| `end(Ti)` | End transaction Ti |
-| `fail(k)` | Site k fails |
-| `recover(k)` | Site k recovers |
-| `dump()` | Print all site states |
+- **Variable Distribution Rules**:
+  - Odd-indexed variables (x1, x3, ...) → Only at site `1 + (index mod 10)`
+  - Even-indexed variables (x2, x4, ...) → Replicated to all 10 sites
+  - Every `xi` starts at value `10 * i`
 
-## Key Algorithms
+- **Main Functions**:
+  - `get_sites_for_variable()` / `get_up_sites_for_variable()` - Resolve placement and currently up replicas
+  - `fail()` / `recover()` - Track failures and reset readability state after recovery
+  - `can_read_variable()` - Enforce snapshot rules per site (including continuous uptime checks)
+  - `was_up_continuously()` - Helper used by `can_read_variable`
+  - `write_variable()` - Append a committed version and, for replicated vars, mark them readable
+  - `dump_all()` - Emit per-site committed values
+
+### 4. `src/models.py` - Data Models
+
+Defines the core data structures of the system:
+
+| Class Name | Description |
+|------------|-------------|
+| `TransactionStatus` | Transaction status enum (ACTIVE, COMMITTED, ABORTED, WAITING) |
+| `VariableVersion` | Variable version, contains value, commit time, transaction ID |
+| `Variable` | Variable, maintains multi-version history |
+| `Transaction` | Transaction, contains read set, write set, accessed sites, etc. |
+| `WaitingOperation` | Pending read operation |
+
+## Core Algorithms
 
 ### Serializable Snapshot Isolation (SSI)
 
@@ -102,16 +112,6 @@ Parses commands from input files:
 3. **Readability After Recovery**: Replicated variables need to be written after site recovery to be readable
 4. **Failure Detection**: If a site accessed by a transaction fails after access, the transaction must abort
 
-## How to Run
-
-```bash
-# Run a single test
-python3 main.py tests/test1.txt
-
-# Run all tests
-python3 run_tests.py
-```
-
 ## Test Case Coverage
 
 | Test Type | Test Numbers |
@@ -122,13 +122,3 @@ python3 run_tests.py
 | RW/WW Cycle Detection | test18, test21, test22 |
 | All Sites Failure | test23, test24 |
 | Transaction Waiting | test25 |
-
-## Data Initialization & Site Failure Behavior
-
-- In `src/site_manager.py`, each site builds its own copy of the data it should host, and every `xi`
-  starts at `10 * i`. Versions are tracked independently at each site, so snapshot metadata is local
-  to that site.
-- When a site fails (`Site.fail`), it simply records the outage; on recovery (`Site.recover`) every
-  replicated variable is marked unreadable until a new committed write arrives. This models the
-  requirement that a site loses its snapshot metadata while down, forcing transactions to wait for a
-  fresh write before trusting that replica again.
