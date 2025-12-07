@@ -112,3 +112,81 @@ python3 run_tests.py
 
 Write your own workload by following the syntax in `tests/test1.txt` (one command per line), then pass the new file to `main.py`. For broader coverage, rely on `run_tests.py`, which already bundles dozens of curated scenarios ranging from snapshot isolation checks to site-failure timelines.
 All regression runs dump their console output into the `test_outputs/` directory for later inspection.
+
+
+
+# Sequence Diagrams
+
+We also provide several sequence diagrams for our project's system, broken down by operation type. Hopefully it will help you understand the system better.
+
+## 1. Begin Transaction
+
+![Begin Transaction Sequence Diagram](imgs/1.png)
+
+*Figure 1: Sequence diagram showing the flow when a client begins a new transaction. The system advances time, parses the command, creates a transaction object with ACTIVE status, and returns a confirmation message.*
+
+## 2. Read Operation
+
+### 2.1 Read - Own Write (from write_set)
+
+![Read Own Write Sequence Diagram](imgs/2_1.png)
+
+*Figure 2.1: When a transaction reads a variable it has previously written, the value is retrieved directly from the transaction's write_set without accessing any site. This implements read-your-writes consistency.*
+
+### 2.2 Read - Cached Read (from read_set)
+
+![Read Cached Sequence Diagram](imgs/2_2.png)
+
+*Figure 2.2: If a transaction has previously read a variable, the cached value from read_set is returned immediately, avoiding redundant site access and maintaining snapshot consistency.*
+
+### 2.3 Read - From Site (Successful)
+
+![Read From Site Sequence Diagram](imgs/2_3.png)
+
+*Figure 2.3: When reading from a site, the system iterates through available sites, checks if they can provide a valid snapshot value based on the transaction's start time, and selects the first readable site. The read value is cached, snapshot writer is tracked for SSI, and RW conflicts are detected.*
+
+### 2.4 Read - Waiting (No Available Site)
+
+![Read Waiting Sequence Diagram](imgs/2_4.png)
+
+*Figure 2.4: When no site is currently available for reading, the system checks if any site has valid historical data (for replicated variables). If no valid data exists, the transaction aborts. Otherwise, the transaction enters WAITING status and the read operation is queued for retry when sites recover.*
+
+## 3. Write Operation
+
+![Write Operation Sequence Diagram](imgs/3.png)
+
+*Figure 3: Write operations are buffered in the transaction's write_set and not immediately written to sites. The system identifies all up sites for the variable, tracks which sites will receive the write, detects RW conflicts for SSI, and records write timestamps. Actual writes to sites occur only at commit time.*
+
+## 4. Site Failure
+
+![Site Failure Sequence Diagram](imgs/4.png)
+
+*Figure 4: When a site fails, it is marked as down (is_up = False) and a failure record with the failure timestamp is added to the site's failure history. This history is used during commit validation to ensure transactions don't commit if a site failed after they wrote to it.*
+
+## 5. Commit Transaction
+
+### 5.1 Commit - Validation Phases
+
+![Commit Validation Sequence Diagram](imgs/5_1.png)
+
+*Figure 5.1: Before committing, a transaction must pass three validation phases: (1) Site Failure Check - ensures no site failed after the transaction wrote to it, (2) First Committer Wins - ensures no other transaction committed a conflicting write first, and (3) SSI Cycle Detection - ensures committing wouldn't create a dangerous serialization cycle with consecutive RW edges.*
+
+### 5.2 Commit - Successful Commit
+
+![Successful Commit Sequence Diagram](imgs/5_2.png)
+
+*Figure 5.2: After passing all validations, the transaction commits. Writes are applied to all currently up sites (intersection of original write sites and current up sites), new variable versions are created with the commit timestamp, replicated variables become readable, and the commit is recorded in the variable commit history.*
+
+## 6. Site Recovery and Waiting Operations
+
+### 6.1 Site Recovery
+
+![Site Recovery Sequence Diagram](imgs/6_1.png)
+
+*Figure 6.1: When a site recovers, it is marked as up, the recovery timestamp is recorded in the failure history, and replicated variables are marked as unreadable (they become readable again after the next write). The system then processes all waiting operations to retry blocked reads.*
+
+### 6.2 Retry Waiting Operations
+
+![Retry Waiting Operations Sequence Diagram](imgs/6_2.png)
+
+*Figure 6.2: After site recovery, the system retries all waiting read operations. For each waiting operation, it attempts to read from available sites. If successful, the transaction status changes from WAITING to ACTIVE, the read value is cached, and the operation is removed from the waiting queue. Failed reads remain in the queue for future retry attempts.*
