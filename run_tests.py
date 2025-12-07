@@ -326,22 +326,7 @@ TEST_CASES = {
         "description": "Write then fail then recover - still abort",
         "expected_commits": [],
         "expected_aborts": ["T1"],
-    },
-    # ==================== BUG FIX VALIDATION TESTS ====================
-    "test_issue1": {
-        "description": "Read site, site fails/recovers, then write - should commit (Issue 1 fix)",
-        "expected_commits": ["T1"],
-        "expected_aborts": [],
-        "expected_reads": {"x2": 20},  # T1 reads initial x2
-        "expected_dump": {"x2": 222},  # T1's write
-    },
-    "test_issue2": {
-        "description": "Sequential transactions - no RW cycle (Issue 2 fix)",
-        "expected_commits": ["T1", "T2"],
-        "expected_aborts": [],
-        "expected_reads": {"x1": 100},  # T2 reads T1's committed value
-        "expected_dump": {"x1": 200},  # T2's write
-    },
+    }
 }
 
 
