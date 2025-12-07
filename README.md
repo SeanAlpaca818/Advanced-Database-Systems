@@ -41,13 +41,15 @@ Responsible for data management at a single site:
 - **Variable Distribution Rules**:
   - Odd-indexed variables (x1, x3, ...) → Only at site `1 + (index mod 10)`
   - Even-indexed variables (x2, x4, ...) → Replicated to all 10 sites
+  - Every `xi` starts at value `10 * i`
 
 - **Main Functions**:
-  - `read_variable()` - Snapshot read (reads version before transaction start time)
-  - `write_variable()` - Write variable (stored in local cache)
-  - `commit_transaction()` - Commit transaction writes
-  - `fail()` / `recover()` - Site failure and recovery
-  - `can_read_variable()` - Check if variable is readable (Available Copies)
+  - `get_sites_for_variable()` / `get_up_sites_for_variable()` - Resolve placement and currently up replicas
+  - `fail()` / `recover()` - Track failures and reset readability state after recovery
+  - `can_read_variable()` - Enforce snapshot rules per site (including continuous uptime checks)
+  - `was_up_continuously()` - Helper used by `can_read_variable`
+  - `write_variable()` - Append a committed version and, for replicated vars, mark them readable
+  - `dump_all()` - Emit per-site committed values
 
 ### 3. `src/transaction_manager.py` - Transaction Manager
 
@@ -120,3 +122,13 @@ python3 run_tests.py
 | RW/WW Cycle Detection | test18, test21, test22 |
 | All Sites Failure | test23, test24 |
 | Transaction Waiting | test25 |
+
+## Data Initialization & Site Failure Behavior
+
+- In `src/site_manager.py`, each site builds its own copy of the data it should host, and every `xi`
+  starts at `10 * i`. Versions are tracked independently at each site, so snapshot metadata is local
+  to that site.
+- When a site fails (`Site.fail`), it simply records the outage; on recovery (`Site.recover`) every
+  replicated variable is marked unreadable until a new committed write arrives. This models the
+  requirement that a site loses its snapshot metadata while down, forcing transactions to wait for a
+  fresh write before trusting that replica again.
