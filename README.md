@@ -190,3 +190,8 @@ We also provide several sequence diagrams for our project's system, broken down 
 ![Retry Waiting Operations Sequence Diagram](imgs/6_2.png)
 
 *Figure 6.2: After site recovery, the system retries all waiting read operations. For each waiting operation, it attempts to read from available sites. If successful, the transaction status changes from WAITING to ACTIVE, the read value is cached, and the operation is removed from the waiting queue. Failed reads remain in the queue for future retry attempts.*
+
+
+# LLM Usage
+
+We used LLM to write function docstrings and refactor code for better readability and maintainability. Also, we used code agents to help write tests and debug the code.

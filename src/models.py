@@ -47,18 +47,66 @@ class Variable:
     is_readable: bool = True
 
     def get_value_at_time(self, timestamp: int) -> Optional[int]:
-        """Return committed value <= timestamp."""
+        """
+        Get the value of this variable at a specific timestamp.
+
+        Purpose:
+            Returns the committed value of the variable that was valid at or
+            before the given timestamp, following snapshot isolation semantics.
+
+        Inputs:
+            timestamp (int): The time point to query the variable value
+
+        Outputs:
+            Optional[int]: The value at the timestamp, or None if no committed
+                          version exists at or before the timestamp
+
+        Side Effects:
+            None
+        """
         for version in self.versions:
             if version.commit_time <= timestamp:
                 return version.value
         return None
 
     def get_latest_value(self) -> Optional[int]:
+        """
+        Get the most recent committed value of this variable.
+
+        Purpose:
+            Returns the value from the latest committed version of the variable,
+            which is stored as the first element in the versions list.
+
+        Inputs:
+            None
+
+        Outputs:
+            Optional[int]: The latest committed value, or None if no versions exist
+
+        Side Effects:
+            None
+        """
         if self.versions:
             return self.versions[0].value
         return None
 
     def get_latest_commit_time(self) -> int:
+        """
+        Get the commit time of the most recent version of this variable.
+
+        Purpose:
+            Returns the commit timestamp of the latest committed version,
+            used for determining the most recent write to the variable.
+
+        Inputs:
+            None
+
+        Outputs:
+            int: The commit time of the latest version, or 0 if no versions exist
+
+        Side Effects:
+            None
+        """
         if self.versions:
             return self.versions[0].commit_time
         return 0
