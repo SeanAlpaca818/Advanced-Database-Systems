@@ -1,124 +1,114 @@
-# Distributed Database System with Serializable Snapshot Isolation
+# RepCRec Project Design Document
 
-This is a distributed database system implementing SSI (Serializable Snapshot Isolation) and the Available Copies algorithm.
+**Authors:** Shaoyi Zheng (sz3684), Wenbo Lu (wl2707)
+
+---
+
+## Introduction
+
+RepCRec (Replicated Concurrency and Recovery) is a distributed database that enforces Serializable Snapshot Isolation (SSI) across ten data sites using the Available Copies algorithm. The system provides a scripting interface for running workloads, detects serialization anomalies at commit time, and simulates site failures/recoveries so that replicated data must be validated before becoming readable again.
+
+---
+
+## Major Modules
+
+| Module | Responsibility |
+|--------|----------------|
+| `src/parser.py` | Tokenizes each line of the input workload and emits structured commands. |
+| `src/transaction_manager.py` | Coordinates transactions, enforces SSI rules, and drives commits/aborts. |
+| `src/site_manager.py` | Owns the ten data sites, their failure history, and per-variable version chains. |
+| `src/models.py` | Defines immutable data records (transactions, versions, waiting operations, etc.). |
+| `main.py` / `run_tests.py` | CLI entry points for interactive execution or automated regression testing. |
+
+---
+
+## Implementation Details
+
+### Command Parser (`src/parser.py`)
+
+The parser is the front door for every workload line. It strips comments/whitespace, matches regular-expression patterns, and emits normalized `Command` objects so the downstream managers never parse strings themselves.
+
+| Functionality | Inputs | Outputs | Purpose |
+|---------------|--------|---------|---------|
+| Regex matching | Raw text line | `CommandType`/payload | Classifies each statement (begin/read/write/fail/etc.). |
+| File parsing | Path to workload file | List of commands | Streams the entire file through `parse_line` for batch execution. |
+
+### Transaction Manager (`src/transaction_manager.py`)
+
+This module orchestrates all transactions under SSI. It keeps the logical clock, manages read/write sets, records dependency edges for cycle detection, and enforces the Available Copies abort rule before applying durable commits.
+
+| Function | Inputs | Outputs | Purpose |
+|----------|--------|---------|---------|
+| `begin_transaction(tid)` | Transaction ID | Console message | Registers a new ACTIVE transaction and timestamps it. |
+| `read(tid, var)` | Transaction ID, variable name | Printed value or wait state | Executes snapshot reads; may queue the txn if no site can currently serve the version. |
+| `write(tid, var, value)` | Transaction ID, variable, integer value | Console message | Buffers writes along with the set of sites that were up when the write occurred. |
+| `end_transaction(tid)` | Transaction ID | Commit/abort message | Runs Available Copies validation, first-committer-wins, and SSI dangerous-cycle detection before committing. |
+| `_would_create_dangerous_cycle(tid)` | Transaction ID | Boolean | Traverses RW/WW edges to decide if committing the txn would close a serialization cycle. |
+| `fail_site(site_id)` / `recover_site(site_id)` | Site number | Console message | Propagate site state changes to the `SiteManager` and re-check waiting reads. |
+
+### Site Manager (`src/site_manager.py`)
+
+The site manager simulates the ten physical sites. It knows the placement policy, tracks failure/recovery intervals, exposes per-site read eligibility, and applies committed writes so replicas regain readability after recovery.
+
+| Function | Inputs | Outputs | Purpose |
+|----------|--------|---------|---------|
+| `get_sites_for_variable(var)` | Variable name | List of site IDs | Applies distribution rules (odd: single home site, even: replicated). |
+| `get_up_sites_for_variable(var)` | Variable name | List of site IDs | Filters the placement list down to currently operational sites. |
+| `fail_site(site_id, timestamp)` / `recover_site(site_id, timestamp)` | Site ID, logical clock | None | Track failure intervals and reset readability status of replicated variables. |
+| `can_read_variable(var, txn_start)` | Variable, timestamp | `(bool, value)` tuple | Checks availability, version history, and continuous uptime for SSI reads. |
+| `write_variable(var, value, commit_time, tid)` | Variable, value, timestamp, txn ID | None | Appends a committed version and marks replicated copies readable post-write. |
+| `dump_all()` / `site.dump()` | — | Console output / dict | Emits committed state per site for auditing and tests. |
+
+### Data Models (`src/models.py`)
+
+All shared data structures live here. These dataclasses capture transaction metadata, multi-version variables, and waiting read requests so the rest of the code can treat them as typed records instead of raw dictionaries.
+
+| Structure | Inputs | Outputs | Purpose |
+|-----------|--------|---------|---------|
+| `TransactionStatus` | Enum literals | String labels | Distinguishes ACTIVE/COMMITTED/ABORTED/WAITING states. |
+| `VariableVersion` | Value, commit time, writer ID | Immutable record | Captures a single committed version at a site. |
+| `Variable` | Name, index, version list | Helper methods | Supplies “value at time” and latest-value lookups used by the site logic. |
+| `Transaction` | TID, start time | Mutable record | Tracks read/write sets, accessed sites, and failure timestamps for validation. |
+| `WaitingOperation` | TID, variable, site set | Immutable record | Represents a blocked read that resumes after a qualifying site recovers. |
+
+---
+
+## System Semantics & Requirements
+
+### Data Distribution & Initialization
+
+- 20 logical variables `x1` … `x20`.  
+- Ten sites (`1`–`10`). Odd-indexed variables live at exactly one site: `site = 1 + (index mod 10)`. Even-indexed variables are fully replicated at all sites.  
+- Every `xi` starts at value `10 × i`, and each site keeps its own SSI metadata. When a site fails, its metadata is wiped, so repopulating the snapshot state requires new commits after recovery.
+
+### Failure & Recovery Semantics
+
+- **Available Copies abort rule:** if a transaction writes to site `s` while `s` is up but `s` fails before the transaction reaches `end(T)`, the transaction must abort during validation even if other copies succeeded. Reads do not enforce this rule.  
+- **Replicated reads:** a transaction can read a replicated variable from site `s` only if `s` saw a commit before the transaction began *and* `s` remained up continuously from that commit until the transaction start. If every site fails in that interval, the reader must abort.  
+- **Recovery:** when a site comes back, odd (non-replicated) variables become readable immediately. Replicated copies accept new writes but remain unreadable to transactions that start after the recovery until a committed write refreshes the data on that site.
+
+### Input/Output & Testing Contract
+
+- **Input format:** one instruction per line (`begin`, `R`, `W`, `fail`, `recover`, `dump`, `end`, etc.). Each newline advances the logical clock by one tick.  
+- **Required output:**  
+  1. Every `R(T, xi)` prints `xi: value`.  
+  2. `W(T, xi, v)` reports the set of sites that accepted the write.  
+  3. Transactions announce waits (e.g., waiting for a site to recover).  
+  4. `end(T)` prints `T commits` or `T aborts` plus the reason logged internally.  
+  5. `dump()` lists committed values at each site, including down sites.  
+- The bundled test scripts follow this format; add your own by mirroring `tests/test1.txt`.
+
+---
 
 ## Quick Start
 
 ```bash
-# Run a single test
+# Run a specific workload script
 python3 main.py tests/test1.txt
 
-# Run all tests
+# Execute the full regression suite
 python3 run_tests.py
 ```
 
-## Project Structure
-
-```
-Final_Proj/
-├── main.py              # Entry point, parses and executes input files
-├── run_tests.py         # Test runner, executes all test cases
-├── src/
-│   ├── __init__.py      # Package initialization file
-│   ├── models.py        # Data model definitions
-│   ├── parser.py        # Command parser
-│   ├── site_manager.py  # Site manager (data management)
-│   └── transaction_manager.py  # Transaction manager (SSI core logic)
-└── tests/
-    ├── test1.txt        # Test cases 1-25
-    ├── test2.txt
-    └── ...
-```
-
-## Core Modules (Execution Order)
-
-### 1. `src/parser.py` - Command Parser
-
-Parses commands from input files:
-
-| Command Format | Description |
-|----------------|-------------|
-| `begin(Ti)` | Begin transaction Ti |
-| `R(Ti, xj)` | Transaction Ti reads variable xj |
-| `W(Ti, xj, v)` | Transaction Ti writes value v to variable xj |
-| `end(Ti)` | End transaction Ti |
-| `fail(k)` | Site k fails |
-| `recover(k)` | Site k recovers |
-| `dump()` | Print all site states |
-
-### 2. `src/transaction_manager.py` - Transaction Manager
-
-Implements the core SSI logic:
-
-- **Read Operation (`read`)**:
-  - Reads snapshot at transaction start time from available sites
-  - If all sites are unavailable, transaction enters waiting state
-
-- **Write Operation (`write`)**:
-  - Writes to all currently available sites
-  - Records which sites were available at write time
-
-- **Commit Detection (`end_transaction`)**:
-  1. **Available Copies Check**: Whether sites accessed by transaction failed after access
-  2. **First Committer Wins**: Check for WW conflicts
-  3. **Dangerous Cycle Detection**: Check for cycles formed by consecutive RW edges
-
-- **Cycle Detection (`_would_create_dangerous_cycle`)**:
-  - Check RW edges: T1 read a variable that T2 later wrote
-  - Check WW edges: T1 and committed transaction wrote the same variable
-  - Detect cycles through `_can_reach_from_tid()`
-
-### 3. `src/site_manager.py` - Site Manager
-
-Responsible for data management at a single site:
-
-- **Variable Distribution Rules**:
-  - Odd-indexed variables (x1, x3, ...) → Only at site `1 + (index mod 10)`
-  - Even-indexed variables (x2, x4, ...) → Replicated to all 10 sites
-  - Every `xi` starts at value `10 * i`
-
-- **Main Functions**:
-  - `get_sites_for_variable()` / `get_up_sites_for_variable()` - Resolve placement and currently up replicas
-  - `fail()` / `recover()` - Track failures and reset readability state after recovery
-  - `can_read_variable()` - Enforce snapshot rules per site (including continuous uptime checks)
-  - `was_up_continuously()` - Helper used by `can_read_variable`
-  - `write_variable()` - Append a committed version and, for replicated vars, mark them readable
-  - `dump_all()` - Emit per-site committed values
-
-### 4. `src/models.py` - Data Models
-
-Defines the core data structures of the system:
-
-| Class Name | Description |
-|------------|-------------|
-| `TransactionStatus` | Transaction status enum (ACTIVE, COMMITTED, ABORTED, WAITING) |
-| `VariableVersion` | Variable version, contains value, commit time, transaction ID |
-| `Variable` | Variable, maintains multi-version history |
-| `Transaction` | Transaction, contains read set, write set, accessed sites, etc. |
-| `WaitingOperation` | Pending read operation |
-
-## Core Algorithms
-
-### Serializable Snapshot Isolation (SSI)
-
-1. **Snapshot Read**: Each transaction reads the database snapshot at its start time
-2. **First Committer Wins**: If two concurrent transactions write the same variable, the first to commit wins
-3. **Dangerous Structure Detection**: Detect cycles T1 → T2 → T3 → T1 that contain consecutive RW edges
-
-### Available Copies Algorithm
-
-1. **Read**: Read from any available site (for replicated variables)
-2. **Write**: Write to all available sites
-3. **Readability After Recovery**: Replicated variables need to be written after site recovery to be readable
-4. **Failure Detection**: If a site accessed by a transaction fails after access, the transaction must abort
-
-## Test Case Coverage
-
-| Test Type | Test Numbers |
-|-----------|--------------|
-| First Committer Wins | test1, test13, test14, test15, test20 |
-| Snapshot Isolation | test2, test7, test8, test9, test10 |
-| Site Failure/Recovery | test3, test3_5, test3_7, test4, test5, test6, test17, test19 |
-| RW/WW Cycle Detection | test18, test21, test22 |
-| All Sites Failure | test23, test24 |
-| Transaction Waiting | test25 |
+Write your own workload by following the syntax in `tests/test1.txt` (one command per line), then pass the new file to `main.py`. For broader coverage, rely on `run_tests.py`, which already bundles dozens of curated scenarios ranging from snapshot isolation checks to site-failure timelines.
+All regression runs dump their console output into the `test_outputs/` directory for later inspection.
